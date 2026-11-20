@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delivery Tracker — Torre de Control Web</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --input: #0f172a; --border: #334155;
+      --text: #f8fafc; --muted: #94a3b8; --primary: #0284c7; --green: #16a34a; --red: #dc2626;
+    }
+    * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .login-box { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 100%; max-width: 400px; }
+    header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+    .container { max-width: 1320px; margin: 0 auto; padding: 20px; }
+    .grid-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .kpi span { color: var(--muted); font-size: 12px; }
+    .kpi strong { display: block; font-size: 24px; margin-top: 4px; color: #38bdf8; }
+    .grid-main { display: grid; grid-template-columns: 400px 1fr; gap: 20px; align-items: start; }
+    @media (max-width: 960px) { .grid-main { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+    h2, h3 { margin-top: 0; font-size: 17px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 9px 0 3px; }
+    input, select { width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--border); background: var(--input); color: var(--text); font-size: 14px; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    button { cursor: pointer; border: none; border-radius: 8px; padding: 10px 14px; font-weight: 700; color: #fff; font-size: 13px; }
+    .btn-primary { background: var(--primary); width: 100%; margin-top: 14px; font-size: 14px; padding: 12px; }
+    .btn-green { background: var(--green); }
+    .btn-red { background: var(--red); }
+    .btn-sm { padding: 6px 10px; font-size: 12px; }
+    #mapaVivo { height: 290px; width: 100%; border-radius: 12px; border: 1px solid var(--border); z-index: 1; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .badge { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; display: inline-block; }
+    .b-ruta { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .b-entregado { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+    .b-incidencia { background: rgba(220, 38, 38, 0.2); color: #f87171; }
+    .incidencia-nota { display: block; margin-top: 4px; font-size: 12px; color: #fca5a5; background: rgba(220, 38, 38, 0.15); padding: 4px 8px; border-radius: 6px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="vistaLogin" class="login-wrap">
+    <form class="login-box" onsubmit="iniciarSesion(event)">
+      <h2>🚚 Delivery Tracker</h2>
+      <p style="color: var(--muted); font-size: 14px;">Torre de Control Web — Acceso Encargado</p>
+      <label>Usuario</label>
+      <input type="text" id="loginUser" value="admin" required />
+      <label>Contraseña</label>
+      <input type="password" id="loginPass" value="1234" required />
+      <button type="submit" class="btn-primary">Iniciar Sesión</button>
+      <p id="loginError" style="color: #f87171; font-size: 13px; margin-top: 10px;"></p>
+    </form>
+  </div>
+
+  <!-- PANEL ADMINISTRATIVO -->
+  <div id="vistaPanel" class="hidden">
+    <header>
+      <div>
+        <strong style="font-size: 18px;">🚚 Delivery Tracker — Torre de Control en Tiempo Real</strong>
+        <div id="infoUsuario" style="font-size: 12px; color: #38bdf8;"></div>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-green btn-sm" onclick="cargarDatos()">🔄 Sincronizar</button>
+        <button class="btn-red btn-sm" onclick="cerrarSesion()">Cerrar Sesión</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <div class="grid-kpis">
+        <div class="kpi"><span>Total Rutas</span><strong id="kpiTotal">0</strong></div>
+        <div class="kpi"><span>Pendientes (En Ruta)</span><strong id="kpiRuta" style="color:#fbbf24;">0</strong></div>
+        <div class="kpi"><span>Entregados</span><strong id="kpiEntregados" style="color:#4ade80;">0</strong></div>
+        <div class="kpi"><span>Incidencias</span><strong id="kpiIncidencias" style="color:#f87171;">0</strong></div>
+        <div class="kpi">
+          <span>Señal GPS Repartidor</span>
+          <div id="kpiGps" style="font-size: 12px; margin-top: 6px; color: #4ade80;">Esperando GPS...</div>
+        </div>
+      </div>
+
+      <div class="grid-main">
+        <!-- FORMULARIO CON DIRECCIÓN COMPLETA -->
+        <div class="card">
+          <h3 id="formTitulo">➕ Asignar Nueva Ruta al Repartidor</h3>
+          <form id="formRuta" onsubmit="guardarRuta(event)">
+            <input type="hidden" id="editDbId" />
+
+            <div class="row-2">
+              <div>
+                <label>Tracking ID</label>
+                <input type="text" id="idPaquete" required />
+              </div>
+              <div>
+                <label>Unidad Asignada</label>
+                <input type="text" id="unidad" value="UNIDAD-01" required />
+              </div>
+            </div>
+
+            <label>Nombre del Cliente Destinatario</label>
+            <input type="text" id="cliente" placeholder="Ej. Laura Mendoza" required />
+
+            <label>Teléfono del Cliente</label>
+            <input type="text" id="telefono" placeholder="Ej. 495-123-4567" />
+
+            <label>Calle y Número Exterior / Interior</label>
+            <input type="text" id="calle" placeholder="Ej. Calle Juárez #105" required />
+
+            <div class="row-2">
+              <div>
+                <label>Colonia / Fracc.</label>
+                <input type="text" id="colonia" placeholder="Ej. Centro" required />
+              </div>
+              <div>
+                <label>Código Postal (C.P.)</label>
+                <input type="text" id="codigoPostal" placeholder="Ej. 20800" required />
+              </div>
+            </div>
+
+            <div class="row-2">
+              <div>
+                <label>Ciudad / Municipio</label>
+                <input type="text" id="ciudad" value="Calvillo" required />
+              </div>
+              <div>
+                <label>Estado</label>
+                <input type="text" id="estadoGeo" value="Aguascalientes" required />
+              </div>
+            </div>
+
+            <div id="campoEstadoWrap" class="hidden">
+              <label>Estado del Envío</label>
+              <select id="estado">
+                <option value="En Ruta">En Ruta</option>
+                <option value="Entregado">Entregado</option>
+                <option value="Incidencia">Incidencia</option>
+              </select>
+            </div>
+
+            <button type="submit" class="btn-primary" id="btnGuardar">📍 Ubicar Dirección y Enviar a la App</button>
+            <button type="button" id="btnCancelarEdicion" class="hidden" style="width:100%; margin-top:8px; background:#475569;" onclick="resetearFormulario()">Cancelar Edición</button>
+          </form>
+        </div>
+
+        <!-- MAPA EN VIVO + TABLA SQL -->
+        <div>
+          <div class="card">
+            <h3>🗺️ Rastreo GPS en Tiempo Real (Repartidor y Destinos)</h3>
+            <div id="mapaVivo"></div>
+          </div>
+
+          <div class="card">
+            <h3>📋 Rutas Asignadas y Reportes de Entrega</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tracking</th>
+                    <th>Cliente y Dirección Completa</th>
+                    <th>Unidad</th>
+                    <th>Estado / Incidencia</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="tablaPaquetes"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let listaGlobal = [];
+    let mapa = null;
+    let marcadorRepartidor = null;
+    let capaDestinos = null;
+
+    function iniciarMapa() {
+      if (mapa) return;
+      mapa = L.map('mapaVivo').setView([21.8469, -102.7188], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+      }).addTo(mapa);
+      capaDestinos = L.layerGroup().addTo(mapa);
+    }
+
+    function generarTracking() {
+      document.getElementById('idPaquete').value = 'PKG-' + Math.floor(1000 + Math.random() * 9000);
+    }
+
+    async function verificarSesion() {
+      const res = await fetch('/api/sesion');
+      const data = await res.json();
+      if (data.autenticado) {
+        document.getElementById('vistaLogin').classList.add('hidden');
+        document.getElementById('vistaPanel').classList.remove('hidden');
+        document.getElementById('infoUsuario').textContent = `Sesión: ${data.usuario.nombre}`;
+        iniciarMapa();
+        generarTracking();
+        cargarDatos();
+      }
+    }
+
+    async function iniciarSesion(e) {
+      e.preventDefault();
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuario: document.getElementById('loginUser').value,
+          password: document.getElementById('loginPass').value,
+        }),
+      });
+      const data = await res.json();
+      if (data.exito) verificarSesion();
+      else document.getElementById('loginError').textContent = data.mensaje;
+    }
+
+    async function cerrarSesion() {
+      await fetch('/api/logout', { method: 'POST' });
+      location.reload();
+    }
+
+    async function cargarDatos() {
+      const res = await fetch('/api/admin/datos');
+      if (res.status === 401) return location.reload();
+      const data = await res.json();
+      listaGlobal = data.paquetes;
+
+      document.getElementById('kpiTotal').textContent = listaGlobal.length;
+      document.getElementById('kpiRuta').textContent = listaGlobal.filter(p => p.estado === 'En Ruta').length;
+      document.getElementById('kpiEntregados').textContent = listaGlobal.filter(p => p.estado === 'Entregado').length;
+      document.getElementById('kpiIncidencias').textContent = listaGlobal.filter(p => p.estado === 'Incidencia').length;
+
+      // Actualizar marcador del repartidor en tiempo real en el mapa
+      if (data.ultimoGps && mapa) {
+        const { latitud, longitud, fecha } = data.ultimoGps;
+        document.getElementById('kpiGps').innerHTML = `🟢 En vivo (${latitud.toFixed(4)}, ${longitud.toFixed(4)})<br><small style="color:#94a3b8">${fecha}</small>`;
+        if (!marcadorRepartidor) {
+          marcadorRepartidor = L.marker([latitud, longitud]).addTo(mapa).bindPopup('🚚 Repartidor en Tiempo Real');
+          mapa.setView([latitud, longitud], 14);
+        } else {
+          marcadorRepartidor.setLatLng([latitud, longitud]);
+        }
+      }
+
+      // Dibujar pines de los paquetes pendientes en el mapa
+      if (capaDestinos) {
+        capaDestinos.clearLayers();
+        listaGlobal.filter(p => p.estado === 'En Ruta').forEach(p => {
+          L.circleMarker([p.lat, p.lon], { radius: 8, color: '#f59e0b', fillOpacity: 0.9 })
+            .addTo(capaDestinos)
+            .bindPopup(`📦 <b>${p.idPaquete}</b><br>${p.cliente}<br>${p.direccion}`);
+        });
+      }
+
+      document.getElementById('tablaPaquetes').innerHTML = listaGlobal.map(p => {
+        const claseBadge = p.estado === 'Entregado' ? 'b-entregado' : p.estado === 'Incidencia' ? 'b-incidencia' : 'b-ruta';
+        const notaIncidencia = p.reporteIncidencia ? `<span class="incidencia-nota">⚠️ ${p.reporteIncidencia}</span>` : '';
+        return `
+          <tr>
+            <td><strong>${p.idPaquete}</strong><br><small style="color:#94a3b8">${p.fechaActualizacion || ''}</small></td>
+            <td><strong>${p.cliente}</strong> (${p.telefono})<br><small style="color:#cbd5e1">${p.direccion}</small></td>
+            <td>${p.unidad}</td>
+            <td><span class="badge ${claseBadge}">${p.estado}</span>${notaIncidencia}</td>
+            <td>
+              <button class="btn-sm" style="background:#0284c7;" onclick="editarRuta(${p.id})">✏️</button>
+              <button class="btn-sm btn-red" onclick="eliminarRuta(${p.id})">🗑️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function guardarRuta(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btnGuardar');
+      btn.textContent = '⏳ Geocodificando dirección...';
+      btn.disabled = true;
+
+      const editId = document.getElementById('editDbId').value;
+      const body = {
+        idPaquete: document.getElementById('idPaquete').value,
+        cliente: document.getElementById('cliente').value,
+        telefono: document.getElementById('telefono').value,
+        calle: document.getElementById('calle').value,
+        colonia: document.getElementById('colonia').value,
+        codigoPostal: document.getElementById('codigoPostal').value,
+        ciudad: document.getElementById('ciudad').value,
+        estadoGeo: document.getElementById('estadoGeo').value,
+        unidad: document.getElementById('unidad').value,
+        estado: document.getElementById('estado').value,
+      };
+
+      const url = editId ? `/api/admin/paquetes/editar/${editId}` : '/api/admin/paquetes';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      btn.disabled = false;
+      if (!data.exito) {
+        btn.textContent = '📍 Ubicar Dirección y Enviar a la App';
+        return alert(data.mensaje);
+      }
+
+      resetearFormulario();
+      cargarDatos();
+    }
+
+    function editarRuta(id) {
+      const p = listaGlobal.find(item => item.id === id);
+      if (!p) return;
+      document.getElementById('editDbId').value = p.id;
+      document.getElementById('idPaquete').value = p.idPaquete;
+      document.getElementById('idPaquete').disabled = true;
+      document.getElementById('cliente').value = p.cliente;
+      document.getElementById('telefono').value = p.telefono;
+      document.getElementById('calle').value = p.calle || p.direccion;
+      document.getElementById('colonia').value = p.colonia || '';
+      document.getElementById('codigoPostal').value = p.codigoPostal || '';
+      document.getElementById('ciudad').value = p.ciudad || 'Calvillo';
+      document.getElementById('estadoGeo').value = p.estadoGeo || 'Aguascalientes';
+      document.getElementById('unidad').value = p.unidad;
+      document.getElementById('estado').value = p.estado;
+
+      document.getElementById('formTitulo').textContent = `✏️ Editando ${p.idPaquete}`;
+      document.getElementById('campoEstadoWrap').classList.remove('hidden');
+      document.getElementById('btnCancelarEdicion').classList.remove('hidden');
+      document.getElementById('btnGuardar').textContent = 'Actualizar Ruta';
+    }
+
+    function resetearFormulario() {
+      document.getElementById('formRuta').reset();
+      document.getElementById('editDbId').value = '';
+      document.getElementById('idPaquete').disabled = false;
+      document.getElementById('ciudad').value = 'Calvillo';
+      document.getElementById('estadoGeo').value = 'Aguascalientes';
+      document.getElementById('formTitulo').textContent = '➕ Asignar Nueva Ruta al Repartidor';
+      document.getElementById('campoEstadoWrap').classList.add('hidden');
+      document.getElementById('btnCancelarEdicion').classList.add('hidden');
+      document.getElementById('btnGuardar').textContent = '📍 Ubicar Dirección y Enviar a la App';
+      generarTracking();
+    }
+
+    async function eliminarRuta(id) {
+      if (!confirm('¿Eliminar este registro de la base de datos?')) return;
+      await fetch(`/api/admin/paquetes/eliminar/${id}`, { method: 'POST' });
+      cargarDatos();
+    }
+
+    setInterval(() => {
+      if (!document.getElementById('vistaPanel').classList.contains('hidden')) cargarDatos();
+    }, 4000);
+
+    verificarSesion();
+  </script>
+</body>
+</html>
